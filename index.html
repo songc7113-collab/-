@@ -1617,9 +1617,14 @@
                         if (!file) return;
 
                         const dbKey = `music_${Date.now()}_${file.name}`;
+                        console.log(`[音乐保存] 准备保存文件，生成的Key是: ${dbKey}`); // 日志1：确认开始
                         try {
-                            await idbHelper.set(dbKey, file);
+                            // 确保数据库已连接
+                            if (!window.idbHelper.db) await window.idbHelper.initDB();
                             
+                            await idbHelper.set(dbKey, file);
+                            console.log(`[音乐保存] 文件已成功存入 IndexedDB。`); // 日志2：确认文件已存入
+
                             const fileExtension = file.name.split('.').pop().toLowerCase();
                             const nativeSupported = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
                             const useNative = nativeSupported.includes(fileExtension);
@@ -1632,18 +1637,23 @@
                                 useNative: useNative,
                                 isLocal: true,
                                 dbKey: dbKey,
-                                file: useNative ? null : file // 为Aurora.js解码器附加文件对象
+                                file: useNative ? null : file
                             };
 
                             playlist.push(newSong);
-                            savePlaylistToStorage();
+                            savePlaylistToStorage(); // 这个函数会把歌曲信息（不含文件本身）存到localStorage
+                            console.log(`[音乐保存] 歌曲信息已更新到 localStorage。`); // 日志3：确认信息已保存
+                            
                             buildPlaylist();
                             loadSong(playlist.length - 1).then(playSong);
                             playlistSidebar.classList.remove('visible');
-                            alert(`歌曲 "${file.name}" 已成功上传并永久保存！`);
+
+                            // 使用更明确的弹窗
+                            alert(`歌曲 "${file.name}" 已成功保存到您的浏览器中！下次访问时它会自动加载。`);
+
                         } catch (err) {
                             console.error('保存或添加音乐文件失败:', err);
-                            alert('保存音乐文件失败！请检查浏览器设置。');
+                            alert('保存音乐文件失败！请按F12打开控制台查看错误详情。');
                         }
                     });
                         const applyBlur = (value) => { getEl('player-background-overlay').style.setProperty('--background-blur', `${value}px`); };
@@ -1883,7 +1893,64 @@ characterList.addEventListener("change", () => {
                             listenTogetherInfo.textContent = ""
                         });
                         
-                        const handlePlaylistImport=async e=>{const t=getEl("playlist-url-input").value.trim();if(!t)return alert("请输入链接或ID");let l=t;const n=/(?:id=|\/playlist\/)(\d+)/,o=/\/playlist\/(\d+)/;"netease"===e?l=(t.match(n)||[])[1]||t:"qq"===e&&(l=(t.match(o)||[])[1]||t);const a=getEl("playlist-import-modal").querySelector(".modal-confirm-btn");a.textContent="解析中...",a.disabled=!0;try{const i=`https://api.injahow.cn/meting/?server=${{netease:"netease",qq:"tencent"}[e]}&type=playlist&id=${l}`,r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(i)}`),s=await r.json(),d=JSON.parse(s.contents);if(Array.isArray(d)&&d.length>0){const c=d.map(e=>({title:e.name,artist:e.artist,src:e.url,cover:e.pic,isLocal:!1,useNative:!0}));playlist.push(...c),savePlaylistToStorage(),buildPlaylist(),getEl("playlist-import-modal").classList.remove("visible"),alert(`成功导入 ${c.length} 首歌曲！`)}else throw new Error("歌单为空或解析失败")}catch(p){alert("导入失败: "+p.message)}finally{a.textContent="导入",a.disabled=!1}};
+                        const handlePlaylistImport = async (service) => {
+                            const urlInput = getEl("playlist-url-input").value.trim();
+                            if (!urlInput) return alert("请输入链接或ID");
+
+                            let playlistId = urlInput;
+                            const neteaseRegex = /(?:id=|\/playlist\/)(\d+)/;
+                            const qqRegex = /\/playlist\/(\d+)/;
+                            
+                            if (service === 'netease') {
+                                playlistId = (urlInput.match(neteaseRegex) || [])[1] || urlInput;
+                            } else if (service === 'qq') {
+                                playlistId = (urlInput.match(qqRegex) || [])[1] || urlInput;
+                            }
+
+                            const modalConfirmBtn = getEl("playlist-import-modal").querySelector(".modal-confirm-btn");
+                            modalConfirmBtn.textContent = "解析中...";
+                            modalConfirmBtn.disabled = true;
+
+                            try {
+                                // 1. 更换为新的CORS代理 corsproxy.io
+                                const targetApiUrl = `https://api.injahow.cn/meting/?server=${{netease: "netease", qq: "tencent"}[service]}&type=playlist&id=${playlistId}`;
+                                const proxyFetchUrl = `https://corsproxy.io/?${encodeURIComponent(targetApiUrl)}`;
+                                
+                                const response = await fetch(proxyFetchUrl);
+
+                                if (!response.ok) {
+                                    throw new Error(`网络请求失败, 状态码: ${response.status}`);
+                                }
+
+                                // 2. 直接解析返回的JSON，不再需要 .contents
+                                const data = await response.json();
+
+                                if (Array.isArray(data) && data.length > 0) {
+                                    const newSongs = data.map(song => ({
+                                        title: song.name,
+                                        artist: song.artist,
+                                        src: song.url,
+                                        cover: song.pic,
+                                        isLocal: false,
+                                        useNative: true
+                                    }));
+                                    playlist.push(...newSongs);
+                                    savePlaylistToStorage();
+                                    buildPlaylist();
+                                    getEl("playlist-import-modal").classList.remove("visible");
+                                    alert(`成功导入 ${newSongs.length} 首歌曲！`);
+                                } else {
+                                    throw new Error("歌单为空或API解析失败，请检查链接是否正确。");
+                                }
+                            } catch (error) {
+                                // 3. 提供更详细的错误提示
+                                console.error("歌单导入失败:", error);
+                                alert(`导入失败: ${error.message}\n\n这通常是由于网络问题或歌单链接无效。请稍后再试。`);
+                            } finally {
+                                modalConfirmBtn.textContent = "导入";
+                                modalConfirmBtn.disabled = false;
+                            }
+                        };
                         const openImportModal=e=>{getEl("playlist-modal-title").textContent=`导入${"netease"===e?"网易云":"QQ"}音乐歌单`,getEl("playlist-url-input").value="",getEl("playlist-import-modal").classList.add("visible");const t=getEl("playlist-import-modal").querySelector(".modal-confirm-btn"),l=t.cloneNode(!0);t.parentNode.replaceChild(l,t),l.addEventListener("click",()=>handlePlaylistImport(e))};getEl('import-netease-btn').addEventListener("click",()=>openImportModal("netease"));getEl('import-qq-btn').addEventListener("click",()=>openImportModal("qq"));getEl("playlist-modal-cancel").addEventListener("click",()=>getEl("playlist-import-modal").classList.remove("visible"));getEl('import-url-btn').addEventListener("click",()=>{const e=prompt("请输入音乐文件的 URL:");e&&(newSong={title:e.substring(e.lastIndexOf("/")+1),artist:"网络音乐",src:e,cover:"https://picsum.photos/id/107/250/250",isLocal:!1, useNative: true},playlist.push(newSong),savePlaylistToStorage(),buildPlaylist(),loadSong(playlist.length-1).then(playSong),playlistSidebar.classList.remove("visible"))});
                         
                         // [新增] 重新关联按钮点击事件，修复无响应的bug
