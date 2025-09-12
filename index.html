@@ -2484,23 +2484,31 @@ musicWallpaperInput.addEventListener('change', (event) => {
         async function initialize() {
             // 0. 初始化数据库（最先执行）
             await idbHelper.initDB();
+           // --- 修复开始：在页面加载时，从数据库恢复已保存的微信主页图片 ---
            try {
-    const keysToLoad = ['wechat_profile_avatar', 'wechat_moments_avatar', 'wechat_moments_cover'];
-    const idsToUpdate = ['#profile-avatar', '#discover-page-avatar', '#moments-cover-photo'];
-    
-    for (let i = 0; i < keysToLoad.length; i++) {
-        const file = await idbHelper.get(keysToLoad[i]);
-        if (file) {
-            const objectURL = URL.createObjectURL(file);
-            const imgElement = wechatContainer.querySelector(idsToUpdate[i]);
-            if (imgElement) {
-                imgElement.src = objectURL;
+                // 定义需要加载的图片和它们对应的位置
+                const imagesToLoad = {
+                    'wechat_profile_avatar': '#profile-avatar',
+                    'wechat_moments_avatar': '#discover-page-avatar',
+                    'wechat_moments_cover': '#moments-cover-photo'
+                };
+
+                // 遍历并加载每一张图片
+                for (const dbKey in imagesToLoad) {
+                    const file = await idbHelper.get(dbKey);
+                    if (file) {
+                        const objectURL = URL.createObjectURL(file);
+                        const imgElement = wechatContainer.querySelector(imagesToLoad[dbKey]);
+                        if (imgElement) {
+                            imgElement.src = objectURL;
+                        }
+                    }
+                }
+                console.log("微信主页的永久图片已成功加载。");
+            } catch (err) {
+                console.error("从数据库加载个人主页图片失败:", err);
             }
-        }
-    }
-} catch (err) {
-    console.error("加载个人主页图片失败:", err);
-}
+            // --- 修复结束 ---
                     // [新增] 加载已保存的音乐播放器壁纸
         try {
             const wallpaperFile = await idbHelper.get('music_wallpaper');
@@ -3829,14 +3837,46 @@ wechatContainer.querySelector('#modal-edit-save').addEventListener('click', () =
             
             function handleImageUpload(event, callback) { const file = event.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = e => callback(e.target.result); reader.readAsDataURL(file); } }
             
-            wechatContainer.querySelector('#wechat-profile-avatar-input')?.addEventListener('change', e => handleImageUpload(e, url => wechatContainer.querySelector('#profile-avatar').src = url));
-            
-            wechatContainer.querySelector('#moments-avatar-input')?.addEventListener('change', e => handleImageUpload(e, url => {
-                wechatContainer.querySelector('#discover-page-avatar').src = url;
-                wechatContainer.querySelectorAll('.my-moment-avatar').forEach(img => img.src = url);
-            }));
+            // --- 修复开始：为微信主页图片上传添加永久保存功能 ---
 
-            wechatContainer.querySelector('#moments-cover-input')?.addEventListener('change', e => handleImageUpload(e, url => wechatContainer.querySelector('#moments-cover-photo').src = url));
+            // 辅助函数：创建一个带永久保存功能的图片上传器
+            const setupWeChatImageSaver = (inputId, imgSelector, dbKey) => {
+                const inputElement = wechatContainer.querySelector(inputId);
+                const imageElement = wechatContainer.querySelector(imgSelector);
+                if (!inputElement || !imageElement) return;
+
+                inputElement.addEventListener('change', (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    // 1. 核心：将文件保存到 IndexedDB 数据库
+                    idbHelper.set(dbKey, file)
+                        .then(() => {
+                            console.log(`图片 '${dbKey}' 已成功保存到数据库。`);
+                        })
+                        .catch(err => {
+                            console.error(`保存图片 '${dbKey}' 失败:`, err);
+                            showAlert('图片保存失败！');
+                        });
+
+                    // 2. 立即在界面上显示预览
+                    imageElement.src = URL.createObjectURL(file);
+
+                    // 如果是朋友圈头像，还需要同步更新已发表动态中的头像
+                    if (dbKey === 'wechat_moments_avatar') {
+                        wechatContainer.querySelectorAll('.my-moment-avatar').forEach(img => {
+                           img.src = imageElement.src;
+                        });
+                    }
+                });
+            };
+
+            // 为“编辑主页”中的三个上传功能分别绑定永久保存逻辑
+            setupWeChatImageSaver('#wechat-profile-avatar-input', '#profile-avatar', 'wechat_profile_avatar');
+            setupWeChatImageSaver('#moments-avatar-input', '#discover-page-avatar', 'wechat_moments_avatar');
+            setupWeChatImageSaver('#moments-cover-input', '#moments-cover-photo', 'wechat_moments_cover');
+            
+            // --- 修复结束 ---
             wechatContainer.querySelector('#statusbar-bg-input')?.addEventListener('change', e => handleImageUpload(e, url => wechatContainer.querySelector('#status-bar').style.backgroundImage = `url(${url})`));
             wechatContainer.querySelector('#nav-bg-input')?.addEventListener('change', e => handleImageUpload(e, url => wechatContainer.querySelector('#bottom-nav').style.backgroundImage = `url(${url})`));
             wechatContainer.querySelector('#nav-icon-input')?.addEventListener('change', e => handleImageUpload(e, url => wechatContainer.querySelectorAll('.nav-icon-img').forEach(icon => icon.src = url)));
