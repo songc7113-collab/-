@@ -1912,23 +1912,22 @@ characterList.addEventListener("change", () => {
                             modalConfirmBtn.disabled = true;
 
                             try {
-                                // 1. 更换为新的CORS代理 corsproxy.io
-                                const targetApiUrl = `https://api.injahow.cn/meting/?server=${{netease: "netease", qq: "tencent"}[service]}&type=playlist&id=${playlistId}`;
-                                const proxyFetchUrl = `https://corsproxy.io/?${encodeURIComponent(targetApiUrl)}`;
-                                
-                                const response = await fetch(proxyFetchUrl);
+                                // 1. 更换为全新的、更稳定的第三方音乐API接口
+                                const targetApiUrl = `https://api.i-meto.com/meting/api?server=${service}&type=playlist&id=${playlistId}`;
+
+                                // 2. 移除CORS代理，因为新的API自带跨域支持，可以直接请求
+                                const response = await fetch(targetApiUrl);
 
                                 if (!response.ok) {
                                     throw new Error(`网络请求失败, 状态码: ${response.status}`);
                                 }
-
-                                // 2. 直接解析返回的JSON，不再需要 .contents
+                                
                                 const data = await response.json();
 
                                 if (Array.isArray(data) && data.length > 0) {
                                     const newSongs = data.map(song => ({
                                         title: song.name,
-                                        artist: song.artist,
+                                        artist: song.artist.join(' / '), // 作者可能是个数组，用'/'拼接
                                         src: song.url,
                                         cover: song.pic,
                                         isLocal: false,
@@ -1940,12 +1939,12 @@ characterList.addEventListener("change", () => {
                                     getEl("playlist-import-modal").classList.remove("visible");
                                     alert(`成功导入 ${newSongs.length} 首歌曲！`);
                                 } else {
-                                    throw new Error("歌单为空或API解析失败，请检查链接是否正确。");
+                                    throw new Error("歌单为空或API解析失败，请检查链接是否有效。");
                                 }
                             } catch (error) {
-                                // 3. 提供更详细的错误提示
-                                console.error("歌单导入失败:", error);
-                                alert(`导入失败: ${error.message}\n\n这通常是由于网络问题或歌单链接无效。请稍后再试。`);
+                                // 3. 增强错误处理，给出更具体的建议
+                                console.error("歌单导入失败详情:", error);
+                                alert(`导入失败: ${error.message}\n\n提示：请确认歌单是公开的，并且链接/ID完全正确。`);
                             } finally {
                                 modalConfirmBtn.textContent = "导入";
                                 modalConfirmBtn.disabled = false;
