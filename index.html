@@ -1,6 +1,3 @@
-<meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="apple-touch-icon" href="https://i.imgs.ovh/2025/09/13/7ZsBoL.jpeg">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -2076,11 +2073,21 @@ musicWallpaperInput.addEventListener('change', (event) => {
                 return "(AI调用出错：请先在主屏幕的【设置】->【API设定】中填写好信息。)";
             }
             try {
-                const response = await fetch(apiSettings.baseUrl + '/chat/completions', {
+                // --- 修改开始 ---
+                // 定义一个CORS代理服务器地址。您可以选用其他的公开代理。
+                const proxyUrl = 'https://cors-anywhere.herokuapp.com/'; 
+                
+                // 拼接最终请求的URL
+                const targetUrl = apiSettings.baseUrl + '/chat/completions';
+
+                const response = await fetch(proxyUrl + targetUrl, {
+                // --- 修改结束 ---
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiSettings.apiKey}`
+                        'Authorization': `Bearer ${apiSettings.apiKey}`,
+                        // 注意：某些CORS代理需要这个额外的头信息
+                        'X-Requested-With': 'XMLHttpRequest' 
                     },
                     body: JSON.stringify({
                         model: apiSettings.modelName,
